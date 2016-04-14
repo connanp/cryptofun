@@ -96,9 +96,9 @@ var top5tests = []struct {
 func TestTopN(t *testing.T) {
 	for _, tt := range top5tests {
 		ng := NewNgram(openDb(tt.path, t), tt.len)
-		scores, texts := ng.TopN(tt.text, -50.0, tt.max)
-		if len(scores) == 0 {
-			t.Errorf("no scores")
+		scores, texts := ng.TopN(tt.text, tt.minScore, tt.max)
+		if len(scores) != tt.max {
+			t.Errorf("TopN(%q,%q,%q) => %q, want %q", tt.text, tt.minScore, tt.max, tt.max)
 		}
 		for i := 0; i < len(scores)-1; i++ {
 			if scores[i] < scores[i+1] {

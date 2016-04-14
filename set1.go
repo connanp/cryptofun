@@ -3,10 +3,16 @@ package cryptofun
 import (
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
+	"log"
+	"os"
 	"regexp"
 	"runtime"
 	"unsafe"
+
+	"github.com/connanp/cryptofun/nlp"
 )
 
 const wordSize = int(unsafe.Sizeof(uintptr(0)))
@@ -99,10 +105,47 @@ func xorKey(dst, b []byte, i int) {
 	}
 }
 
-// SubXOR attempts to decrypt the string and returns all possible matches.
+func encodeStringToHexBytes(s string) []byte {
+	encoded := make([]byte, hex.EncodedLen(len(s)))
+	hex.Encode(encoded, []byte(s))
+	return encoded
+}
+
+// EncryptFileSubXOR takes a key and does a repeating XOR substitution on a file
+func EncryptFileSubXOR(f *os.File, w io.Writer, key string) {
+	fi, _ := f.Stat()
+	EncryptSubXOR(f, fi.Size(), w, key)
+}
+
+// EncryptSubXOR takes a key and does a repeating XOR substitution on the result
+func EncryptSubXOR(r io.Reader, rlen int64, w io.Writer, key string) {
+	k := encodeStringToHexBytes(key)
+	kl := len(key)
+	kl64 := int64(len(key))
+
+	// FIXME this won't handle large files
+	bsize := int(rlen / kl64)
+	buf := make([]byte, bsize)
+	dst := make([]byte, bsize)
+
+	// one more iteration for the remainder
+	if rlen%kl64 > 0 {
+		kl++
+	}
+	for i := 0; i < kl; i++ {
+		if n, err := io.ReadAtLeast(r, buf, bsize); err != nil {
+			buf = buf[:n]
+			dst = dst[:n]
+		}
+		xorBytes(dst, buf, k)
+		w.Write(dst)
+	}
+}
+
+// DecryptSubXOR attempts to decrypt the string and returns all possible matches.
 // Will check matches against a character class of chars provided by the caller.
 // A recommended set of chars would be "ETAOIN SHRDLU"
-func SubXOR(enc string, chars string) ([]string, error) {
+func DecryptSubXOR(enc, chars string) ([]string, error) {
 	b1, err := hex.DecodeString(enc)
 	if err != nil {
 		return nil, err
@@ -123,10 +166,28 @@ func SubXOR(enc string, chars string) ([]string, error) {
 				agg += len(found[j])
 			}
 			if agg > 20 {
-				fmt.Printf("match: %s\n", string(x[:]))
 				matches = append(matches, string(x[:]))
 			}
 		}
 	}
 	return matches, nil
+}
+
+// BestMatchXORSub brute forces the single cipher and prints the best matches
+func BestMatchXORSub(enc, chars string, ng *nlp.Ngram, minScore float64, max int) (string, error) {
+	potentials, err := DecryptSubXOR(enc, chars)
+	if err != nil {
+		return "", err
+	}
+	scores, matches := ng.TopN(potentials, minScore, max)
+	for i := 0; i < len(scores); i++ {
+		if matches[i] != "" {
+			log.Printf("match: \"%s\" with score %g", matches[i], scores[i])
+		}
+	}
+
+	if matches[0] == "" {
+		return "", errors.New("no useful matches found")
+	}
+	return matches[0], nil
 }

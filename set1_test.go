@@ -1,7 +1,11 @@
 package cryptofun
 
 import (
+	"bufio"
+	"os"
 	"testing"
+
+	"github.com/connanp/cryptofun/nlp"
 )
 
 type tt struct {
@@ -45,12 +49,12 @@ func TestXOR(t *testing.T) {
 }
 
 var xorciphertests = []tt{
-	{"1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736", "ETAOIN SHRDLU"},
+	{"1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736", "Cooking MC's like a pound of bacon"},
 }
 
 func TestXORCipher(t *testing.T) {
 	for _, tt := range xorciphertests {
-		result, _ := SubXOR(tt.in, tt.out)
+		result, _ := DecryptSubXOR(tt.in, "ETAOIN SHRDLU")
 		var found bool
 		for i, s := range result {
 			if s == tt.out {
@@ -60,6 +64,71 @@ func TestXORCipher(t *testing.T) {
 		}
 		if !found {
 			t.Errorf("SubXOR(%q) => want %q", tt.in, tt.out)
+		}
+	}
+}
+
+var xorcipherbestests = []struct {
+	in       string
+	chars    string
+	expected string
+	minScore float64
+	max      int
+}{
+	{"1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736",
+		nlp.MostFreqSingleChars,
+		"Cooking MC's like a pound of bacon",
+		-50.0,
+		5,
+	},
+}
+
+func TestBestMatchXORCipher(t *testing.T) {
+	path := "resources\\english_quadgrams.txt"
+	f, err := os.Open(path)
+	if err != nil {
+		t.Error("Failed to open file " + path)
+	}
+	defer f.Close()
+
+	ng := nlp.NewNgram(f, 4)
+	for _, tt := range xorcipherbestests {
+		match, _ := BestMatchXORSub(tt.in, tt.chars, &ng, tt.minScore, tt.max)
+		if match != tt.expected {
+			t.Errorf("BestMatchXORSub() => \"%s\", want \"%s\"", match, tt.expected)
+		}
+	}
+}
+
+func TestBruteForceFileSubXOR(t *testing.T) {
+	path := "resources\\english_quadgrams.txt"
+	f, err := os.Open(path)
+	if err != nil {
+		t.Error("Failed to open file " + path)
+	}
+	defer f.Close()
+
+	ng := nlp.NewNgram(f, 4)
+	tpath := "resources\\4.txt"
+	testfile, err := os.Open(tpath)
+	if err != nil {
+		t.Error("Failed to open file " + tpath)
+	}
+	defer testfile.Close()
+
+	scanner := bufio.NewScanner(testfile)
+	n := 0
+	for scanner.Scan() {
+		n++
+	}
+
+	matches := make([]string, 1, n)
+	testfile.Seek(0, 0)
+	scanner = bufio.NewScanner(testfile)
+	for scanner.Scan() {
+		m, err := BestMatchXORSub(scanner.Text(), nlp.MostFreqSingleChars, &ng, -15.0, 5)
+		if err != nil {
+			matches = append(matches, m)
 		}
 	}
 }

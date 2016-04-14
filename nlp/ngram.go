@@ -16,6 +16,11 @@ type Ngram struct {
 	Index  map[string]float64
 }
 
+const (
+	// MostFreqSingleChars are the most frequent letters in english
+	MostFreqSingleChars = "ETAOINSHRDLU"
+)
+
 // NewNgram creates a map of n-grams used for scoring
 func NewNgram(r io.ReadSeeker, i int) Ngram {
 	// line count
@@ -46,6 +51,7 @@ func NewNgram(r io.ReadSeeker, i int) Ngram {
 }
 
 // Score computes the probability score of containing an n-gram
+// If 0.0 is returned then there was a problem in the string
 func (ng *Ngram) Score(text string) float64 {
 	score := 0.0
 	for _, s := range strings.Split(text, " ") {
@@ -80,7 +86,7 @@ func (ng *Ngram) TopN(possibles []string, minScore float64, max int) ([]float64,
 	matches := make([]string, max)
 	for _, p := range possibles {
 		score := ng.Score(p)
-		if score >= minScore {
+		if score >= minScore && score != 0 {
 			for i, s := range topN {
 				if score > s {
 					insertFloat(&topN, score, i)
