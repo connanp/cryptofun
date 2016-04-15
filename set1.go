@@ -1,6 +1,7 @@
 package cryptofun
 
 import (
+	"bufio"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -105,41 +106,65 @@ func xorKey(dst, b []byte, i int) {
 	}
 }
 
+func xorKeyRepeat(dst, b []byte, k []byte) {
+	n := len(b)
+	kl := len(k)
+	if n < kl {
+		for i := range b {
+			dst[i] = b[i] ^ k[i]
+		}
+		return
+	}
+
+	for i := 0; i < n; i += kl {
+		for j := 0; j < kl && i+j < n; j++ {
+			dst[i+j] = b[i+j] ^ k[j]
+		}
+	}
+}
+
 func encodeStringToHexBytes(s string) []byte {
 	encoded := make([]byte, hex.EncodedLen(len(s)))
 	hex.Encode(encoded, []byte(s))
 	return encoded
 }
 
+func encodeHexBytes(a []byte) []byte {
+	b := make([]byte, hex.EncodedLen(len(a)))
+	hex.Encode(b, a)
+	return b
+}
+
 // EncryptFileSubXOR takes a key and does a repeating XOR substitution on a file
-func EncryptFileSubXOR(f *os.File, w io.Writer, key string) {
+func EncryptFileSubXOR(f *os.File, w *bufio.Writer, key string) {
 	fi, _ := f.Stat()
 	EncryptSubXOR(f, fi.Size(), w, key)
 }
 
 // EncryptSubXOR takes a key and does a repeating XOR substitution on the result
-func EncryptSubXOR(r io.Reader, rlen int64, w io.Writer, key string) {
-	k := encodeStringToHexBytes(key)
-	kl := len(key)
-	kl64 := int64(len(key))
+func EncryptSubXOR(r io.Reader, rlen int64, w *bufio.Writer, key string) {
+	kb := []byte(key)
+	kl := int64(len(kb))
 
-	// FIXME this won't handle large files
-	bsize := int(rlen / kl64)
+	bsize := rlen / kl
 	buf := make([]byte, bsize)
 	dst := make([]byte, bsize)
 
 	// one more iteration for the remainder
-	if rlen%kl64 > 0 {
+	if rlen%kl > 0 {
 		kl++
 	}
-	for i := 0; i < kl; i++ {
-		if n, err := io.ReadAtLeast(r, buf, bsize); err != nil {
+	for i := int64(0); i <= kl; i++ {
+		n, err := io.ReadAtLeast(r, buf, int(bsize))
+		if err != nil {
 			buf = buf[:n]
 			dst = dst[:n]
 		}
-		xorBytes(dst, buf, k)
-		w.Write(dst)
+		xorKeyRepeat(dst, buf, kb)
+		enc := encodeHexBytes(dst)
+		w.Write(enc)
 	}
+	w.Flush()
 }
 
 // DecryptSubXOR attempts to decrypt the string and returns all possible matches.
